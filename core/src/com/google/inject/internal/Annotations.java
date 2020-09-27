@@ -16,7 +16,8 @@
 
 package com.google.inject.internal;
 
-import com.google.common.base.Function;
+import static java.lang.annotation.RetentionPolicy.RUNTIME;
+
 import com.google.common.base.Joiner;
 import com.google.common.base.Joiner.MapJoiner;
 import com.google.common.base.Preconditions;
@@ -82,6 +83,7 @@ public class Annotations {
    * Generates an Annotation for the annotation class. Requires that the annotation is all
    * optionals.
    */
+  @SuppressWarnings("unchecked") // Safe because generateAnnotationImpl returns T for Class<T>
   public static <T extends Annotation> T generateAnnotation(Class<T> annotationType) {
     Preconditions.checkState(
         isAllDefaultMethods(annotationType), "%s is not all default methods", annotationType);
@@ -153,20 +155,18 @@ public class Annotations {
 
   private static final MapJoiner JOINER = Joiner.on(", ").withKeyValueSeparator("=");
 
-  private static final Function<Object, String> DEEP_TO_STRING_FN =
-      new Function<Object, String>() {
-        @Override
-        public String apply(Object arg) {
-          String s = Arrays.deepToString(new Object[] {arg});
-          return s.substring(1, s.length() - 1); // cut off brackets
-        }
-      };
-
   /** Implements {@link Annotation#toString}. */
   private static String annotationToString(
       Class<? extends Annotation> type, Map<String, Object> members) throws Exception {
     StringBuilder sb = new StringBuilder().append("@").append(type.getName()).append("(");
-    JOINER.appendTo(sb, Maps.transformValues(members, DEEP_TO_STRING_FN));
+    JOINER.appendTo(
+        sb,
+        Maps.transformValues(
+            members,
+            arg -> {
+              String s = Arrays.deepToString(new Object[] {arg});
+              return s.substring(1, s.length() - 1); // cut off brackets
+            }));
     return sb.append(")").toString();
   }
 
@@ -210,6 +210,35 @@ public class Annotations {
     }
 
     return false;
+  }
+
+  private static final boolean QUOTE_MEMBER_VALUES = determineWhetherToQuote();
+
+  /**
+   * Returns {@code value}, quoted if annotation implementations quote their member values. In Java
+   * 9, annotations quote their string members.
+   */
+  public static String memberValueString(String value) {
+    return QUOTE_MEMBER_VALUES ? "\"" + value + "\"" : value;
+  }
+
+  @Retention(RUNTIME)
+  private @interface TestAnnotation {
+    String value();
+  }
+
+  @TestAnnotation("determineWhetherToQuote")
+  private static boolean determineWhetherToQuote() {
+    try {
+      String annotation =
+          Annotations.class
+              .getDeclaredMethod("determineWhetherToQuote")
+              .getAnnotation(TestAnnotation.class)
+              .toString();
+      return annotation.contains("\"determineWhetherToQuote\"");
+    } catch (NoSuchMethodException e) {
+      throw new AssertionError(e);
+    }
   }
 
   /** Checks for the presence of annotations. Caches results because Android doesn't. */
@@ -268,6 +297,9 @@ public class Annotations {
       errors.withSource(type).scopeAnnotationOnAbstractType(scopeAnnotation, type, source);
     }
   }
+
+  // NOTE: getKey/findBindingAnnotation are used by Gin which is abandoned.  So changing this API
+  // will prevent Gin users from upgrading Guice version.
 
   /** Gets a key for the given type, member and annotations. */
   public static Key<?> getKey(

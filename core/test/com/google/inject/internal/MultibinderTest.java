@@ -16,6 +16,8 @@
 
 package com.google.inject.internal;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.MoreCollectors.onlyElement;
 import static com.google.inject.Asserts.assertContains;
 import static com.google.inject.internal.RealMultibinder.collectionOfJavaxProvidersOf;
 import static com.google.inject.internal.SpiUtils.VisitType.BOTH;
@@ -28,7 +30,6 @@ import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
 import com.google.common.base.Optional;
 import com.google.common.base.Predicates;
-import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -1139,9 +1140,9 @@ public class MultibinderTest extends TestCase {
       Key<?> bindingKey = entry.getKey();
       Key<?> clonedKey;
       if (bindingKey.getAnnotation() != null) {
-        clonedKey = Key.get(bindingKey.getTypeLiteral(), bindingKey.getAnnotation());
+        clonedKey = bindingKey.ofType(bindingKey.getTypeLiteral());
       } else if (bindingKey.getAnnotationType() != null) {
-        clonedKey = Key.get(bindingKey.getTypeLiteral(), bindingKey.getAnnotationType());
+        clonedKey = bindingKey.ofType(bindingKey.getTypeLiteral());
       } else {
         clonedKey = Key.get(bindingKey.getTypeLiteral());
       }
@@ -1169,7 +1170,10 @@ public class MultibinderTest extends TestCase {
         };
 
     InstanceBinding<?> binding =
-        Iterables.getOnlyElement(Iterables.filter(Elements.getElements(ab), InstanceBinding.class));
+        Elements.getElements(ab).stream()
+            .filter(InstanceBinding.class::isInstance)
+            .map(InstanceBinding.class::cast)
+            .collect(onlyElement());
     Key<?> keyBefore = binding.getKey();
     assertEquals(listOfStrings, keyBefore.getTypeLiteral());
 
@@ -1371,9 +1375,9 @@ public class MultibinderTest extends TestCase {
     // We also know the InstanceBindings will be in the order: A, b, C because that's
     // how we bound them, and binding order is preserved.
     List<Binding<String>> bindings =
-        FluentIterable.from(injector.findBindingsByType(stringType))
+        injector.findBindingsByType(stringType).stream()
             .filter(Predicates.instanceOf(InstanceBinding.class))
-            .toList();
+            .collect(toImmutableList());
     assertEquals(bindings.toString(), 3, bindings.size());
     Binding<String> a = bindings.get(0);
     Binding<String> b = bindings.get(1);
@@ -1469,7 +1473,7 @@ public class MultibinderTest extends TestCase {
     assertEquals(setBinding.getDependencies().toString(), 2, setBinding.getDependencies().size());
     Set<Dependency<?>> expected = Sets.newHashSet();
     for (Dependency<?> dep : setBinding.getDependencies()) {
-      Key key = dep.getKey();
+      Key<?> key = dep.getKey();
       Dependency<?> providerDependency =
           Dependency.get(key.ofType(Types.providerOf(key.getTypeLiteral().getType())));
       expected.add(providerDependency);
@@ -1524,6 +1528,95 @@ public class MultibinderTest extends TestCase {
             }
           }
         });
+  }
+
+  public void testMultibinderWithWildcard() {
+    Module module =
+        new AbstractModule() {
+          @Override
+          protected void configure() {
+            Multibinder<String> multibinder = Multibinder.newSetBinder(binder(), String.class);
+            multibinder.addBinding().toInstance("a");
+            multibinder.addBinding().toInstance("b");
+            multibinder.addBinding().toInstance("c");
+          }
+        };
+    Injector injector = Guice.createInjector(module);
+
+    Set<String> set = injector.getInstance(new Key<Set<String>>() {});
+    assertEquals(ImmutableSet.of("a", "b", "c"), set);
+
+    Set<? extends String> setOfWildcard = injector.getInstance(new Key<Set<? extends String>>() {});
+    assertEquals(ImmutableSet.of("a", "b", "c"), setOfWildcard);
+  }
+
+  /**
+   * Injection of {@code Set<? extends T>} wasn't added until 2020-07. It's possible that
+   * applications already have a binding to that type. If they do, confirm that Guice fails fast
+   * with a duplicate binding error.
+   */
+  public void testMultibinderConflictsWithExistingWildcard() {
+    Module module =
+        new AbstractModule() {
+          @Override
+          protected void configure() {
+            Multibinder<String> multibinder = Multibinder.newSetBinder(binder(), String.class);
+            multibinder.addBinding().toInstance("a");
+            multibinder.addBinding().toInstance("b");
+            multibinder.addBinding().toInstance("c");
+          }
+
+          @Provides
+          public Set<? extends String> provideStrings() {
+            return ImmutableSet.of("d", "e", "f");
+          }
+        };
+
+    try {
+      Guice.createInjector(module);
+      fail();
+    } catch (CreationException e) {
+      assertTrue(
+          e.getMessage()
+              .contains(
+                  "A binding to java.util.Set<? extends java.lang.String> was already configured"));
+    }
+  }
+
+  /**
+   * This is the same as the previous test, but it gets at the conflicting set through a multibinder
+   * rather than through a regular binding. It's unlikely that application developers would do this
+   * in practice, but if they do we want to make sure it is detected and fails fast.
+   */
+  public void testMultibinderConflictsWithExistingMultibinder() {
+    Module module =
+        new AbstractModule() {
+          @Override
+          protected void configure() {
+            Multibinder<String> multibinder = Multibinder.newSetBinder(binder(), String.class);
+            multibinder.addBinding().toInstance("a");
+            multibinder.addBinding().toInstance("b");
+            multibinder.addBinding().toInstance("c");
+
+            // Safe because Set<? extends String> can be used as Set<String> in this context
+            @SuppressWarnings("unchecked")
+            Multibinder<String> multibinder2 =
+                Multibinder.newSetBinder(
+                    binder(), (TypeLiteral<String>) TypeLiteral.get(Types.subtypeOf(String.class)));
+            multibinder2.addBinding().toInstance("d");
+            multibinder2.addBinding().toInstance("e");
+          }
+        };
+
+    try {
+      Guice.createInjector(module);
+      fail();
+    } catch (CreationException e) {
+      assertTrue(
+          e.getMessage()
+              .contains(
+                  "A binding to java.util.Set<? extends java.lang.String> was already configured"));
+    }
   }
 
   private <T> Collection<T> collectValues(

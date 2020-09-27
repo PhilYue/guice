@@ -58,6 +58,15 @@ public final class ElementSource {
    */
   final ElementSource originalElementSource;
 
+  /**
+   * Wheather the originalElementSource was set externaly (untrusted) or by Guice internals
+   * (trusted).
+   *
+   * <p>External code can set the originalElementSource to an arbitrary ElementSource via
+   * Binder.withSource(ElementSource), thereby spoofing the element origin.
+   */
+  final boolean trustedOriginalElementSource;
+
   /** The {@link ModuleSource source} of module creates the element. */
   final ModuleSource moduleSource;
 
@@ -75,6 +84,9 @@ public final class ElementSource {
    */
   final Object declaringSource;
 
+  /** The scanner that created this binding (if it was created by a scanner). */
+  final ModuleAnnotatedMethodScanner scanner;
+
   /**
    * Creates a new {@ElementSource} from the given parameters.
    *
@@ -87,16 +99,20 @@ public final class ElementSource {
    */
   ElementSource(
       /* @Nullable */ ElementSource originalSource,
+      boolean trustedOriginalSource,
       Object declaringSource,
       ModuleSource moduleSource,
-      StackTraceElement[] partialCallStack) {
+      StackTraceElement[] partialCallStack,
+      ModuleAnnotatedMethodScanner scanner) {
     Preconditions.checkNotNull(declaringSource, "declaringSource cannot be null.");
     Preconditions.checkNotNull(moduleSource, "moduleSource cannot be null.");
     Preconditions.checkNotNull(partialCallStack, "partialCallStack cannot be null.");
     this.originalElementSource = originalSource;
+    this.trustedOriginalElementSource = trustedOriginalSource;
     this.declaringSource = declaringSource;
     this.moduleSource = moduleSource;
     this.partialCallStack = StackTraceElements.convertToInMemoryStackTraceElement(partialCallStack);
+    this.scanner = scanner;
   }
 
   /**

@@ -16,47 +16,47 @@
 
 package com.google.inject;
 
+import static com.google.common.base.StandardSystemProperty.JAVA_CLASS_PATH;
+import static com.google.common.base.StandardSystemProperty.PATH_SEPARATOR;
 import static com.google.inject.internal.InternalFlags.getIncludeStackTraceOption;
 import static junit.framework.Assert.assertEquals;
 import static junit.framework.Assert.assertNotNull;
 import static junit.framework.Assert.assertSame;
 import static junit.framework.Assert.assertTrue;
 
-import com.google.common.base.Function;
 import com.google.common.base.Joiner;
+import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.testing.GcFinalization;
 import com.google.inject.internal.InternalFlags.IncludeStackTraceOption;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.NotSerializableException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import junit.framework.Assert;
 
 /** @author jessewilson@google.com (Jesse Wilson) */
 public class Asserts {
+
   private Asserts() {}
 
   /**
    * Returns the String that would appear in an error message for this chain of classes as modules.
    */
-  public static String asModuleChain(Class... classes) {
+  public static String asModuleChain(Class<?>... classes) {
     return Joiner.on(" -> ")
         .appendTo(
             new StringBuilder(" (via modules: "),
-            Iterables.transform(
-                ImmutableList.copyOf(classes),
-                new Function<Class, String>() {
-                  @Override
-                  public String apply(Class input) {
-                    return input.getName();
-                  }
-                }))
+            Iterables.transform(ImmutableList.copyOf(classes), Class::getName))
         .append(")")
         .toString();
   }
@@ -65,7 +65,7 @@ public class Asserts {
    * Returns the source file appears in error messages based on {@link
    * #getIncludeStackTraceOption()} value.
    */
-  public static String getDeclaringSourcePart(Class clazz) {
+  public static String getDeclaringSourcePart(Class<?> clazz) {
     if (getIncludeStackTraceOption() == IncludeStackTraceOption.OFF) {
       return ".configure(Unknown Source";
     }
@@ -189,7 +189,7 @@ public class Asserts {
     // so we put a second latch and wait for a ReferenceQueue to tell us.
     Object data = ref.get();
     ReferenceQueue<Object> queue = null;
-    WeakReference extraRef = null;
+    WeakReference<Object> extraRef = null;
     if (data != null) {
       queue = new ReferenceQueue<>();
       extraRef = new WeakReference<>(data, queue);
@@ -205,5 +205,28 @@ public class Asserts {
         throw new RuntimeException(e);
       }
     }
+  }
+
+  /** Returns the URLs in the system class path. */
+  // TODO(user): Use a common API once that's available.
+  public static URL[] getClassPathUrls() {
+    if (Asserts.class.getClassLoader() instanceof URLClassLoader) {
+      return ((URLClassLoader) Asserts.class.getClassLoader()).getURLs();
+    }
+    ImmutableList.Builder<URL> urls = ImmutableList.builder();
+    for (String entry : Splitter.on(PATH_SEPARATOR.value()).split(JAVA_CLASS_PATH.value())) {
+      try {
+        try {
+          urls.add(new File(entry).toURI().toURL());
+        } catch (SecurityException e) { // File.toURI checks to see if the file is a directory
+          urls.add(new URL("file", null, new File(entry).getAbsolutePath()));
+        }
+      } catch (MalformedURLException e) {
+        AssertionError error = new AssertionError("malformed class path entry: " + entry);
+        error.initCause(e);
+        throw error;
+      }
+    }
+    return urls.build().toArray(new URL[0]);
   }
 }

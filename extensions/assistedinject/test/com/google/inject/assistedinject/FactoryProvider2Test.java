@@ -31,6 +31,7 @@ import com.google.inject.Stage;
 import com.google.inject.TypeLiteral;
 import com.google.inject.assistedinject.FactoryProvider2Test.Equals.ComparisonMethod;
 import com.google.inject.assistedinject.FactoryProvider2Test.Equals.Impl;
+import com.google.inject.internal.Annotations;
 import com.google.inject.matcher.Matchers;
 import com.google.inject.name.Named;
 import com.google.inject.name.Names;
@@ -538,7 +539,7 @@ public class FactoryProvider2Test extends TestCase {
     } catch (CreationException expected) {
       assertContains(
           expected.getMessage(),
-          "Could not find a suitable constructor in java.lang.Double.",
+          "No implementation for java.lang.Double (with no qualifier annotation) was bound",
           "at " + ColoredCarFactory.class.getName() + ".create(FactoryProvider2Test.java");
     }
   }
@@ -558,7 +559,7 @@ public class FactoryProvider2Test extends TestCase {
     } catch (CreationException expected) {
       assertContains(
           expected.getMessage(),
-          "Could not find a suitable constructor in java.lang.Double.",
+          "No implementation for java.lang.Double (with no qualifier annotation) was bound",
           "at " + ColoredCarFactory.class.getName() + ".create(FactoryProvider2Test.java");
     }
   }
@@ -672,7 +673,9 @@ public class FactoryProvider2Test extends TestCase {
               + " [com.google.inject.Provider<"
               + Color.class.getName()
               + ">"
-              + " annotated with @com.google.inject.assistedinject.Assisted(value=color)]"
+              + " annotated with @com.google.inject.assistedinject.Assisted(value="
+              + Annotations.memberValueString("color")
+              + ")]"
               + " on method ["
               + ProviderBasedColoredCarFactory.class.getName()
               + ".createMustang()]");
@@ -728,7 +731,9 @@ public class FactoryProvider2Test extends TestCase {
               + " [com.google.inject.Provider<"
               + Color.class.getName()
               + ">"
-              + " annotated with @com.google.inject.assistedinject.Assisted(value=color)]"
+              + " annotated with @com.google.inject.assistedinject.Assisted(value="
+              + Annotations.memberValueString("color")
+              + ")]"
               + " on method ["
               + JavaxProviderBasedColoredCarFactory.class.getName()
               + ".createMustang()]");
@@ -861,7 +866,9 @@ public class FactoryProvider2Test extends TestCase {
               + Color.class.getName()
               + " annotated with @"
               + Assisted.class.getName()
-              + "(value=paint) was already configured at");
+              + "(value="
+              + Annotations.memberValueString("paint")
+              + ") was already configured at");
     }
   }
 

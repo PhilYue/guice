@@ -26,7 +26,7 @@ import static com.google.inject.internal.SpiUtils.providerInstance;
 import static com.google.inject.name.Names.named;
 import static java.lang.annotation.RetentionPolicy.RUNTIME;
 
-import com.google.common.base.Function;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
@@ -164,12 +164,18 @@ public class MapBinderTest extends TestCase {
                     collectionOf(
                         Types.javaxProviderOf(
                             mapEntryOf(String.class, Types.providerOf(String.class))))),
+                // Set<? extends Map.Entry<K, Provider<V>>>
+                Key.get(
+                    Types.setOf(
+                        Types.subtypeOf(mapEntryOf(String.class, Types.providerOf(String.class))))),
                 // @Named(...) Boolean
                 Key.get(
                     Boolean.class,
                     named(
                         "Multibinder<java.util.Map$Entry<java.lang.String, "
-                            + "com.google.inject.Provider<java.lang.String>>> permits duplicates")))
+                            + "com.google.inject.Provider<java.lang.String>>> permits duplicates")),
+                // Map<K, ? extends V>
+                Key.get(Types.mapOf(String.class, Types.subtypeOf(String.class))))
             .addAll(FRAMEWORK_KEYS)
             .build();
 
@@ -1216,12 +1222,7 @@ public class MapBinderTest extends TestCase {
     Map<String, String> map =
         Maps.transformValues(
             injectedMultimap.get(),
-            new Function<Set<Provider<String>>, String>() {
-              @Override
-              public String apply(Set<Provider<String>> stringProvidersSet) {
-                return Iterables.getOnlyElement(stringProvidersSet).get();
-              }
-            });
+            stringProvidersSet -> Iterables.getOnlyElement(stringProvidersSet).get());
     assertEquals(mapOf("a", "A", "b", "B", "c", "C"), map);
   }
 
@@ -1536,6 +1537,96 @@ public class MapBinderTest extends TestCase {
           "keyOne",
           "bound at:",
           "MapBinderWithTwoEntriesModule");
+    }
+  }
+
+  public void testMapBinderWildcardsAlias() {
+    Module module =
+        new AbstractModule() {
+          @Override
+          protected void configure() {
+            MapBinder<Integer, String> mapBinder =
+                MapBinder.newMapBinder(binder(), Integer.class, String.class);
+            mapBinder.addBinding(1).toInstance("1");
+            mapBinder.addBinding(2).toInstance("2");
+          }
+        };
+    Injector injector = Guice.createInjector(module);
+
+    Map<Integer, String> expectedMap = ImmutableMap.of(1, "1", 2, "2");
+    assertEquals(expectedMap, injector.getInstance(new Key<Map<Integer, String>>() {}));
+    assertEquals(expectedMap, injector.getInstance(new Key<Map<Integer, ? extends String>>() {}));
+  }
+
+  /**
+   * Injection of {@code Map<K, ? extends V>} wasn't added until 2020-07. It's possible that
+   * applications already have a binding to that type. If they do, confirm that Guice fails fast
+   * with a duplicate binding error.
+   */
+  public void testMapBinderConflictsWithExistingWildcard() {
+    Module module =
+        new AbstractModule() {
+          @Override
+          protected void configure() {
+            MapBinder<Integer, String> mapBinder =
+                MapBinder.newMapBinder(binder(), Integer.class, String.class);
+            mapBinder.addBinding(1).toInstance("1");
+            mapBinder.addBinding(2).toInstance("2");
+          }
+
+          @Provides
+          protected Map<Integer, ? extends String> provideMap() {
+            return ImmutableMap.of(1, "1", 2, "2");
+          }
+        };
+    try {
+      Guice.createInjector(module);
+      fail();
+    } catch (CreationException e) {
+      assertTrue(
+          e.getMessage()
+              .contains(
+                  "A binding to java.util.Map<java.lang.Integer, ? extends java.lang.String> was"
+                      + " already configured"));
+    }
+  }
+
+  /**
+   * This is the same as the previous test, but it gets at the conflicting set through a MapBinder
+   * rather than through a regular binding. It's unlikely that application developers would do this
+   * in practice, but if they do we want to make sure it is detected and fails fast.
+   */
+  public void testMapBinderConflictsWithExistingMapBinder() {
+    Module module =
+        new AbstractModule() {
+          @Override
+          protected void configure() {
+            MapBinder<Integer, String> mapBinder =
+                MapBinder.newMapBinder(binder(), Integer.class, String.class);
+            mapBinder.addBinding(1).toInstance("1");
+            mapBinder.addBinding(2).toInstance("2");
+
+            // Cast TypeLiteral<? extends String> to TypeLiteral<String> so the test can add
+            // bindings below (i.e. it would be an error to add bindings if the MapBinder were an
+            // MapBinder<Integer, ? extends String>).
+            @SuppressWarnings("unchecked") // see above comment
+            TypeLiteral<String> valueType =
+                (TypeLiteral<String>) TypeLiteral.get(Types.subtypeOf(String.class));
+            MapBinder<Integer, String> mapBinder2 =
+                MapBinder.newMapBinder(binder(), TypeLiteral.get(Integer.class), valueType);
+            mapBinder2.addBinding(1).toInstance("1");
+            mapBinder2.addBinding(2).toInstance("2");
+          }
+        };
+    try {
+      Guice.createInjector(module);
+      fail();
+    } catch (CreationException e) {
+      assertTrue(
+          e.getMessage()
+              .contains(
+                  "A binding to java.util.Map<java.lang.Integer, ? extends java.lang.String> was"
+                      + " already configured"));
     }
   }
 

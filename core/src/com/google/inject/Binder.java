@@ -128,7 +128,7 @@ import java.lang.reflect.Method;
  *     bindConstant().annotatedWith(ServerHost.class).to(args[0]);</pre>
  *
  * Sets up a constant binding. Constant injections must always be annotated. When a constant
- * binding's value is a string, it is eligile for conversion to all primitive types, to {@link
+ * binding's value is a string, it is eligible for conversion to all primitive types, to {@link
  * Enum#valueOf(Class, String) all enums}, and to {@link Class#forName class literals}. Conversions
  * for other types can be configured using {@link #convertToTypes(Matcher, TypeConverter)
  * convertToTypes()}.
@@ -189,9 +189,9 @@ public interface Binder {
    * eligible for interception if:
    *
    * <ul>
-   * <li>Guice created the instance the method is on
-   * <li>Neither the enclosing type nor the method is final
-   * <li>And the method is package-private, protected, or public
+   *   <li>Guice created the instance the method is on
+   *   <li>Neither the enclosing type nor the method is final
+   *   <li>And the method is package-private, protected, or public
    * </ul>
    *
    * @param classMatcher matches classes the interceptor should apply to. For example: {@code
@@ -379,7 +379,7 @@ public interface Binder {
    * @return a binder that shares its configuration with this binder.
    * @since 2.0
    */
-  Binder skipSources(Class... classesToSkip);
+  Binder skipSources(Class<?>... classesToSkip);
 
   /**
    * Creates a new private child environment for bindings and other configuration. The returned

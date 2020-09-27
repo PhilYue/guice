@@ -17,6 +17,7 @@
 package com.google.inject;
 
 import com.google.common.collect.Iterables;
+import com.google.inject.internal.Annotations;
 import com.google.inject.name.Named;
 import com.google.inject.name.Names;
 import com.google.inject.spi.Message;
@@ -97,9 +98,17 @@ public class ImplicitBindingTest extends TestCase {
       Asserts.assertContains(
           expected.getMessage(),
           "1) No implementation for " + I.class.getName(),
-          "annotated with @" + Named.class.getName() + "(value=i) was bound.",
+          "annotated with @"
+              + Named.class.getName()
+              + "(value="
+              + Annotations.memberValueString("i")
+              + ") was bound.",
           "while locating " + I.class.getName(),
-          " annotated with @" + Named.class.getName() + "(value=i)");
+          " annotated with @"
+              + Named.class.getName()
+              + "(value="
+              + Annotations.memberValueString("i")
+              + ")");
     }
   }
 
@@ -134,10 +143,10 @@ public class ImplicitBindingTest extends TestCase {
             });
 
     // Capture good bindings.
-    Binding v1 = injector.getBinding(Valid.class);
-    Binding v2 = injector.getBinding(Valid2.class);
-    Binding jv1 = injector.getBinding(JitValid.class);
-    Binding jv2 = injector.getBinding(JitValid2.class);
+    Binding<Valid> v1 = injector.getBinding(Valid.class);
+    Binding<Valid2> v2 = injector.getBinding(Valid2.class);
+    Binding<JitValid> jv1 = injector.getBinding(JitValid.class);
+    Binding<JitValid2> jv2 = injector.getBinding(JitValid2.class);
 
     // Then validate that a whole series of invalid bindings are erased.
     assertFailure(injector, Invalid.class);
@@ -160,8 +169,7 @@ public class ImplicitBindingTest extends TestCase {
     assertSame(jv2, injector.getBinding(JitValid2.class));
   }
 
-  @SuppressWarnings("unchecked")
-  private void assertFailure(Injector injector, Class clazz) {
+  private static void assertFailure(Injector injector, Class<?> clazz) {
     try {
       injector.getBinding(clazz);
       fail("Shouldn't have been able to get binding of: " + clazz);
@@ -341,7 +349,11 @@ public class ImplicitBindingTest extends TestCase {
     } catch (ConfigurationException expected) {
       Message msg = Iterables.getOnlyElement(expected.getErrorMessages());
       Asserts.assertContains(
-          msg.getMessage(), "Could not find a suitable constructor in " + D.class.getName());
+          msg.getMessage(),
+          "No implementation for "
+              + D.class.getName()
+              + " (with no qualifier annotation) was bound, and could not find an injectable"
+              + " constructor");
     }
     // Assert that we've removed all the bindings.
     assertNull(injector.getExistingBinding(Key.get(A.class)));

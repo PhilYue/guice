@@ -423,6 +423,11 @@ public class DuplicateBindingsTest extends TestCase {
                 public boolean equals(Object obj) {
                   throw new RuntimeException("Boo!");
                 }
+
+                @Override
+                public int hashCode() {
+                  throw new RuntimeException("Boo!");
+                }
               });
     }
   }
@@ -499,6 +504,7 @@ public class DuplicateBindingsTest extends TestCase {
     }
 
     @Override
+    @SuppressWarnings({"EqualsHashCode", "EqualsBrokenForNull"}) // intentionally NPE on null for the test
     public boolean equals(Object obj) {
       return obj.getClass() == getClass();
     }

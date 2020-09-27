@@ -41,6 +41,7 @@ import com.google.inject.Stage;
 import com.google.inject.TypeLiteral;
 import com.google.inject.internal.Errors;
 import com.google.inject.internal.InternalFlags;
+import com.google.inject.internal.InternalFlags.CustomClassLoadingOption;
 import com.google.inject.internal.ProviderMethod;
 import com.google.inject.internal.ProviderMethodsModule;
 import com.google.inject.name.Named;
@@ -79,7 +80,7 @@ public class ProviderMethodsTest extends TestCase implements Module {
     assertNotSame(bob, clone);
     assertSame(bob.getDaughter(), clone.getDaughter());
 
-    Key soleBobKey = Key.get(Bob.class, Sole.class);
+    Key<Bob> soleBobKey = Key.get(Bob.class, Sole.class);
     assertSame(injector.getInstance(soleBobKey), injector.getInstance(soleBobKey));
   }
 
@@ -412,8 +413,8 @@ public class ProviderMethodsTest extends TestCase implements Module {
         element + " instanceof ProviderInstanceBinding",
         element instanceof ProviderInstanceBinding);
 
-    ProviderInstanceBinding binding = (ProviderInstanceBinding) element;
-    javax.inject.Provider provider = binding.getUserSuppliedProvider();
+    ProviderInstanceBinding<?> binding = (ProviderInstanceBinding<?>) element;
+    javax.inject.Provider<?> provider = binding.getUserSuppliedProvider();
     assertTrue(provider instanceof ProviderMethod);
     assertEquals(methodsObject, ((ProviderMethod) provider).getInstance());
     assertSame(provider, binding.getProviderInstance());
@@ -608,6 +609,10 @@ public class ProviderMethodsTest extends TestCase implements Module {
 
   /*if[AOP]*/
   public void testShareFastClass() {
+    // Test relies on package access which CHILD loading doesn't have
+    if (InternalFlags.getCustomClassLoadingOption() == CustomClassLoadingOption.CHILD) {
+      return;
+    }
     CallerInspecterModule module = new CallerInspecterModule();
     Guice.createInjector(Stage.PRODUCTION, module);
     assertEquals(module.fooCallerClass, module.barCallerClass);
@@ -635,6 +640,10 @@ public class ProviderMethodsTest extends TestCase implements Module {
   }
 
   public void testShareFastClassWithSuperClass() {
+    // Test relies on package access which CHILD loading doesn't have
+    if (InternalFlags.getCustomClassLoadingOption() == CustomClassLoadingOption.CHILD) {
+      return;
+    }
     CallerInspecterSubClassModule module = new CallerInspecterSubClassModule();
     Guice.createInjector(Stage.PRODUCTION, module);
     assertEquals(
@@ -671,12 +680,14 @@ public class ProviderMethodsTest extends TestCase implements Module {
 
     @Provides
     @Named("rawlist")
+    @SuppressWarnings("rawtypes") // Testing rawtypes.
     List rawProvider(@Named("list") List<String> f) {
       return f;
     }
 
     @Provides
     @Named("unrawlist")
+    @SuppressWarnings({"unchecked", "rawtypes"}) // Testing rawtypes
     List<String> rawParameterProvider(@Named("rawlist") List f) {
       return f;
     }
@@ -831,6 +842,7 @@ public class ProviderMethodsTest extends TestCase implements Module {
   public void testOverrideProviderMethod_subclassRawTypes_returnType() {
     class SubClassModule extends SuperClassModule {
       @Override
+      @SuppressWarnings({"unchecked", "rawtypes"}) // Testing rawtypes.
       List annotatedGenericProviderMethod() {
         return super.annotatedGenericProviderMethod();
       }
@@ -851,6 +863,7 @@ public class ProviderMethodsTest extends TestCase implements Module {
 
   public void testOverrideProviderMethod_subclassRawTypes_parameterType() {
     class SubClassModule extends SuperClassModule {
+      @SuppressWarnings({"unchecked", "rawtypes"}) // Testing rawtypes
       @Override
       Collection<String> annotatedGenericParameterProviderMethod(List foo) {
         return super.annotatedGenericParameterProviderMethod(foo);
@@ -1032,12 +1045,12 @@ public class ProviderMethodsTest extends TestCase implements Module {
     // sanity check that the injector works
     Injector injector = Guice.createInjector(module);
     assertEquals(1, injector.getInstance(Integer.class).intValue());
-    ProviderInstanceBinding injectorBinding =
-        (ProviderInstanceBinding) injector.getBinding(Integer.class);
-    assertEquals(1, injectorBinding.getUserSuppliedProvider().get());
+    ProviderInstanceBinding<Integer> injectorBinding =
+        (ProviderInstanceBinding<Integer>) injector.getBinding(Integer.class);
+    assertEquals(1, injectorBinding.getUserSuppliedProvider().get().intValue());
 
-    ProviderInstanceBinding moduleBinding =
-        (ProviderInstanceBinding) Iterables.getOnlyElement(Elements.getElements(module));
+    ProviderInstanceBinding<?> moduleBinding =
+        (ProviderInstanceBinding<?>) Iterables.getOnlyElement(Elements.getElements(module));
     try {
       moduleBinding.getUserSuppliedProvider().get();
       fail();
@@ -1045,6 +1058,44 @@ public class ProviderMethodsTest extends TestCase implements Module {
       assertEquals(
           "This Provider cannot be used until the Injector has been created.", ise.getMessage());
     }
+  }
+
+  static final class DeduplicateModule extends AbstractModule {
+    @Provides
+    String provideString() {
+      return "";
+    }
+  }
+
+  public void testDeduplicateProviderMethodsBindings_sameInstance() {
+    Module module = new DeduplicateModule();
+    Guice.createInjector(Stage.PRODUCTION, module, module);
+  }
+
+  public void testDeduplicateProviderMethodsBindings_differentInstances() {
+    try {
+      Guice.createInjector(Stage.PRODUCTION, new DeduplicateModule(), new DeduplicateModule());
+      fail();
+    } catch (CreationException expected) {
+      assertContains(expected.getMessage(), "A binding to java.lang.String was already configured");
+    }
+  }
+
+  static final class DeduplicateStaticModule extends AbstractModule {
+    @Provides
+    static String provideString() {
+      return "";
+    }
+  }
+
+  public void testDeduplicateProviderMethodsBindings_sameInstance_staticMethod() {
+    Module module = new DeduplicateStaticModule();
+    Guice.createInjector(Stage.PRODUCTION, module, module);
+  }
+
+  public void testDeduplicateProviderMethodsBindings_differentInstances_staticMethod() {
+    Guice.createInjector(
+        Stage.PRODUCTION, new DeduplicateStaticModule(), new DeduplicateStaticModule());
   }
 
   private void runNullableTest(Injector injector, Dependency<?> dependency, Module module) {

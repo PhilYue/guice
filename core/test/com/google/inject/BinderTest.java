@@ -23,6 +23,7 @@ import static com.google.inject.Asserts.getDeclaringSourcePart;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+import com.google.inject.internal.Annotations;
 import com.google.inject.name.Named;
 import com.google.inject.name.Names;
 import com.google.inject.spi.Message;
@@ -131,7 +132,9 @@ public class BinderTest extends TestCase {
       String segment4 =
           "No implementation for java.util.Date annotated with @"
               + Named.class.getName()
-              + "(value=date) was bound.";
+              + "(value="
+              + Annotations.memberValueString("date")
+              + ") was bound.";
       String atSegment = "at " + getClass().getName();
       String sourceFileName = getDeclaringSourcePart(getClass());
       assertContains(
@@ -489,7 +492,10 @@ public class BinderTest extends TestCase {
     } catch (ConfigurationException expected) {
       assertContains(
           expected.getMessage(),
-          "1) Could not find a suitable constructor in " + NoInjectConstructor.class.getName(),
+          "1) No implementation for "
+              + NoInjectConstructor.class.getName()
+              + " (with no qualifier annotation) was bound, and could not find an injectable"
+              + " constructor",
           "for the 1st parameter of "
               + MissingParameter.class.getName()
               + ".<init>(BinderTest.java:");
@@ -562,17 +568,17 @@ public class BinderTest extends TestCase {
 
     @Override
     protected void configure() {
-      bind(AbstractModule.class).annotatedWith(red).toProvider(Providers.<AbstractModule>of(null));
-      bind(Binder.class).annotatedWith(red).toProvider(Providers.<Binder>of(null));
-      bind(Binding.class).annotatedWith(red).toProvider(Providers.<Binding>of(null));
-      bind(Injector.class).annotatedWith(red).toProvider(Providers.<Injector>of(null));
-      bind(Key.class).annotatedWith(red).toProvider(Providers.<Key>of(null));
-      bind(Module.class).annotatedWith(red).toProvider(Providers.<Module>of(null));
-      bind(Provider.class).annotatedWith(red).toProvider(Providers.<Provider>of(null));
-      bind(Scope.class).annotatedWith(red).toProvider(Providers.<Scope>of(null));
-      bind(Stage.class).annotatedWith(red).toProvider(Providers.<Stage>of(null));
-      bind(TypeLiteral.class).annotatedWith(red).toProvider(Providers.<TypeLiteral>of(null));
-      bind(new TypeLiteral<Key<String>>() {}).toProvider(Providers.<Key<String>>of(null));
+      bind(AbstractModule.class).annotatedWith(red).toProvider(Providers.of(null));
+      bind(Binder.class).annotatedWith(red).toProvider(Providers.of(null));
+      bind(Binding.class).annotatedWith(red).toProvider(Providers.of(null));
+      bind(Injector.class).annotatedWith(red).toProvider(Providers.of(null));
+      bind(Key.class).annotatedWith(red).toProvider(Providers.of(null));
+      bind(Module.class).annotatedWith(red).toProvider(Providers.of(null));
+      bind(Provider.class).annotatedWith(red).toProvider(Providers.of(null));
+      bind(Scope.class).annotatedWith(red).toProvider(Providers.of(null));
+      bind(Stage.class).annotatedWith(red).toProvider(Providers.of(null));
+      bind(TypeLiteral.class).annotatedWith(red).toProvider(Providers.of(null));
+      bind(new TypeLiteral<Key<String>>() {}).toProvider(Providers.of(null));
     }
   }
 

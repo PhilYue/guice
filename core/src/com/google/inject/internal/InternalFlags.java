@@ -13,14 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.google.inject.internal;
-
 
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.Arrays;
 import java.util.logging.Logger;
+
 /**
  * Contains flags for Guice.
  */
@@ -36,10 +35,9 @@ public class InternalFlags {
   private static final NullableProvidesOption NULLABLE_PROVIDES
       = parseNullableProvidesOption(NullableProvidesOption.ERROR);
 
+  private static final ColorizeOption COLORIZE_OPTION = parseColorizeOption();
 
-  /**
-   * The options for Guice stack trace collection.
-   */
+  /** The options for Guice stack trace collection. */
   public enum IncludeStackTraceOption {
     /** No stack trace collection */
     OFF,
@@ -49,16 +47,37 @@ public class InternalFlags {
     COMPLETE
   }
 
-  /**
-   * The options for Guice custom class loading.
-   */
+  /** The options for Guice custom class loading. */
   public enum CustomClassLoadingOption {
-    /** No custom class loading */
+    /**
+     * Define fast/enhanced types in the same class loader as their original type, never creates
+     * class loaders. Uses Unsafe.defineAnonymousClass to gain access to existing class loaders.
+     */
     OFF,
-    /** Automatically bridge between class loaders (Default) */
-    BRIDGE
+
+    /**
+     * Define fast/enhanced types with Unsafe.defineAnonymousClass, never creates class loaders.
+     * This is faster than regular class loading and anonymous classes are easier to unload.
+     *
+     * <p>Note: with this option you cannot look up fast/enhanced types by name or mock/spy them.
+     */
+    ANONYMOUS,
+
+    /**
+     * Attempt to define fast/enhanced types in the same class loader as their original type.
+     * Otherwise creates a child class loader whose parent is the original class loader. (Default)
+     */
+    BRIDGE,
+
+    /**
+     * Define fast/enhanced types in a child class loader whose parent is the original class loader.
+     *
+     * <p>Note: with this option you cannot intercept package-private methods.
+     */
+    CHILD
   }
 
+  /** Options for handling nullable parameters used in provides methods. */
   public enum NullableProvidesOption {
     /** Ignore null parameters to @Provides methods. */
     IGNORE,
@@ -66,6 +85,36 @@ public class InternalFlags {
     WARN,
     /** Error if null parameters are passed to non-@Nullable parameters of provides parameters */
     ERROR
+  }
+
+  /** Options for enable or disable the new experimental error messages. */
+  public enum ExperimentalErrorMessagesOption {
+    DISABLED,
+    ENABLED,
+  }
+
+  /** Options for enable or disable using ansi color in error messages. */
+  public enum ColorizeOption {
+    AUTO {
+      @Override
+      boolean enabled() {
+        return System.console() != null && System.getenv("TERM") != null;
+      }
+    },
+    ON {
+      @Override
+      boolean enabled() {
+        return true;
+      }
+    },
+    OFF {
+      @Override
+      boolean enabled() {
+        return false;
+      }
+    };
+
+    abstract boolean enabled();
   }
 
   public static IncludeStackTraceOption getIncludeStackTraceOption() {
@@ -78,6 +127,14 @@ public class InternalFlags {
 
   public static NullableProvidesOption getNullableProvidesOption() {
     return NULLABLE_PROVIDES;
+  }
+
+  public static boolean enableExperimentalErrorMessages() {
+    return false;
+  }
+
+  public static boolean enableColorizeErrorMessages() {
+    return COLORIZE_OPTION.enabled();
   }
 
   private static IncludeStackTraceOption parseIncludeStackTraceOption() {
@@ -95,12 +152,16 @@ public class InternalFlags {
     return getSystemOption("guice_check_nullable_provides_params", defaultValue);
   }
 
+  private static ColorizeOption parseColorizeOption() {
+    return getSystemOption("guice_colorize_error_messages", ColorizeOption.OFF);
+  }
+
   /**
    * Gets the system option indicated by the specified key; runs as a privileged action.
-   *
+   * 
    * @param name of the system option
    * @param defaultValue if the option is not set
-   *
+   * 
    * @return value of the option, defaultValue if not set
    */
   private static <T extends Enum<T>> T getSystemOption(final String name, T defaultValue) {
@@ -109,11 +170,11 @@ public class InternalFlags {
 
   /**
    * Gets the system option indicated by the specified key; runs as a privileged action.
-   *
+   * 
    * @param name of the system option
    * @param defaultValue if the option is not set
    * @param secureValue if the security manager disallows access to the option
-   *
+   * 
    * @return value of the option, defaultValue if not set, secureValue if no access
    */
   private static <T extends Enum<T>> T getSystemOption(final String name, T defaultValue,

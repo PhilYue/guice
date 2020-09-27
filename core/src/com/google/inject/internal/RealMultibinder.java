@@ -24,6 +24,7 @@ import com.google.inject.multibindings.MultibinderBinding;
 import com.google.inject.multibindings.MultibindingsTargetVisitor;
 import com.google.inject.spi.BindingTargetVisitor;
 import com.google.inject.spi.Dependency;
+import com.google.inject.spi.Message;
 import com.google.inject.spi.ProviderInstanceBinding;
 import com.google.inject.spi.ProviderWithExtensionVisitor;
 import com.google.inject.util.Types;
@@ -81,6 +82,13 @@ public final class RealMultibinder<T> implements Module {
     return (TypeLiteral<Collection<javax.inject.Provider<T>>>) TypeLiteral.get(type);
   }
 
+  @SuppressWarnings("unchecked")
+  static <T> TypeLiteral<Set<? extends T>> setOfExtendsOf(TypeLiteral<T> elementType) {
+    Type extendsType = Types.subtypeOf(elementType.getType());
+    Type setOfExtendsType = Types.setOf(extendsType);
+    return (TypeLiteral<Set<? extends T>>) TypeLiteral.get(setOfExtendsType);
+  }
+
   private final BindingSelection<T> bindingSelection;
   private final Binder binder;
 
@@ -100,6 +108,7 @@ public final class RealMultibinder<T> implements Module {
     binder
         .bind(bindingSelection.getCollectionOfProvidersKey())
         .toProvider(collectionOfProvidersProvider);
+    binder.bind(bindingSelection.getSetOfExtendsKey()).to(bindingSelection.getSetKey());
 
     // The collection this exposes is internally an ImmutableList, so it's OK to massage
     // the guice Provider to javax Provider in the value (since the guice Provider implements
@@ -180,8 +189,8 @@ public final class RealMultibinder<T> implements Module {
     }
 
     @Override
-    protected Set<T> doProvision(Errors errors, InternalContext context, Dependency<?> dependency)
-        throws ErrorsException {
+    protected Set<T> doProvision(InternalContext context, Dependency<?> dependency)
+        throws InternalProvisionException {
       SingleParameterInjector<T>[] localInjectors = injectors;
       if (localInjectors == null) {
         // if localInjectors == null, then we have no bindings so return the empty set.
@@ -195,24 +204,25 @@ public final class RealMultibinder<T> implements Module {
       T[] values = (T[]) new Object[localInjectors.length];
       for (int i = 0; i < localInjectors.length; i++) {
         SingleParameterInjector<T> parameterInjector = localInjectors[i];
-        T newValue = parameterInjector.inject(errors, context);
+        T newValue = parameterInjector.inject(context);
         if (newValue == null) {
-          throw newNullEntryException(i, errors);
+          throw newNullEntryException(i);
         }
         values[i] = newValue;
       }
       ImmutableSet<T> set = ImmutableSet.copyOf(values);
       // There are fewer items in the set than the array.  Figure out which one got dropped.
       if (!permitDuplicates && set.size() < values.length) {
-        throw newDuplicateValuesException(set, values, errors);
+        throw newDuplicateValuesException(set, values);
       }
       return set;
     }
 
-    private ErrorsException newNullEntryException(int i, Errors errors) {
-      errors.addMessage(
-          "Set injection failed due to null element bound at: %s", bindings.get(i).getSource());
-      return errors.toException();
+    private InternalProvisionException newNullEntryException(int i) {
+      return InternalProvisionException.create(
+          ErrorId.NULL_ELEMENT_IN_SET,
+          "Set injection failed due to null element bound at: %s",
+          bindings.get(i).getSource());
     }
 
     @SuppressWarnings("unchecked")
@@ -226,8 +236,17 @@ public final class RealMultibinder<T> implements Module {
       }
     }
 
-    private ErrorsException newDuplicateValuesException(
-        ImmutableSet<T> set, T[] values, Errors errors) {
+    private InternalProvisionException newDuplicateValuesException(
+        ImmutableSet<T> set, T[] values) {
+      if (InternalFlags.enableExperimentalErrorMessages()) {
+        Message message =
+            new Message(
+                GuiceInternal.GUICE_INTERNAL,
+                ErrorId.DUPLICATE_ELEMENT,
+                new DuplicateElementError<T>(
+                    getSetKey(), bindings, values, ImmutableList.of(getSource())));
+        return new InternalProvisionException(message);
+      }
       // TODO(lukes): consider reporting all duplicate values, the easiest way would be to rebuild
       // a new set and detect dupes as we go
       // Find the duplicate binding
@@ -254,19 +273,25 @@ public final class RealMultibinder<T> implements Module {
       String newString = newValue.toString();
       if (Objects.equal(oldString, newString)) {
         // When the value strings match, just show the source of the bindings
-        errors.addMessage(
+        return InternalProvisionException.create(
+            ErrorId.DUPLICATE_ELEMENT,
             "Set injection failed due to duplicated element \"%s\""
                 + "\n    Bound at %s\n    Bound at %s",
-            newValue, duplicateBinding.getSource(), newBinding.getSource());
+            newValue,
+            duplicateBinding.getSource(),
+            newBinding.getSource());
       } else {
         // When the value strings don't match, include them both as they may be useful for debugging
-        errors.addMessage(
+        return InternalProvisionException.create(
+            ErrorId.DUPLICATE_ELEMENT,
             "Set injection failed due to multiple elements comparing equal:"
                 + "\n    \"%s\"\n        bound at %s"
                 + "\n    \"%s\"\n        bound at %s",
-            oldValue, duplicateBinding.getSource(), newValue, newBinding.getSource());
+            oldValue,
+            duplicateBinding.getSource(),
+            newValue,
+            newBinding.getSource());
       }
-      return errors.toException();
     }
 
     @Override
@@ -283,6 +308,14 @@ public final class RealMultibinder<T> implements Module {
     @Override
     public Key<Set<T>> getSetKey() {
       return bindingSelection.getSetKey();
+    }
+
+    @Override
+    public Set<Key<?>> getAlternateSetKeys() {
+      return ImmutableSet.of(
+          (Key<?>) bindingSelection.getCollectionOfProvidersKey(),
+          (Key<?>) bindingSelection.getCollectionOfJavaxProvidersKey(),
+          (Key<?>) bindingSelection.getSetOfExtendsKey());
     }
 
     @Override
@@ -318,6 +351,7 @@ public final class RealMultibinder<T> implements Module {
     private String setName;
     private Key<Collection<Provider<T>>> collectionOfProvidersKey;
     private Key<Collection<javax.inject.Provider<T>>> collectionOfJavaxProvidersKey;
+    private Key<Set<? extends T>> setOfExtendsKey;
     private Key<Boolean> permitDuplicatesKey;
 
     private boolean isInitialized;
@@ -443,6 +477,14 @@ public final class RealMultibinder<T> implements Module {
       return local;
     }
 
+    Key<Set<? extends T>> getSetOfExtendsKey() {
+      Key<Set<? extends T>> local = setOfExtendsKey;
+      if (local == null) {
+        local = setOfExtendsKey = setKey.ofType(setOfExtendsOf(elementType));
+      }
+      return local;
+    }
+
     boolean isInitialized() {
       return isInitialized;
     }
@@ -482,7 +524,8 @@ public final class RealMultibinder<T> implements Module {
             || binding.getKey().equals(getPermitDuplicatesKey())
             || binding.getKey().equals(setKey)
             || binding.getKey().equals(collectionOfProvidersKey)
-            || binding.getKey().equals(collectionOfJavaxProvidersKey);
+            || binding.getKey().equals(collectionOfJavaxProvidersKey)
+            || binding.getKey().equals(setOfExtendsKey);
       } else {
         return false;
       }
@@ -551,7 +594,7 @@ public final class RealMultibinder<T> implements Module {
 
     @Override
     protected Collection<Provider<T>> doProvision(
-        Errors errors, InternalContext context, Dependency<?> dependency) {
+        InternalContext context, Dependency<?> dependency) {
       return collectionOfProviders;
     }
 

@@ -6,7 +6,7 @@
   <parent>
     <groupId>com.google.inject</groupId>
     <artifactId>guice-parent</artifactId>
-    <version>4.1.1-SNAPSHOT</version>
+    <version>4.2.4-SNAPSHOT</version>
   </parent>
 
   <artifactId>guice</artifactId>
@@ -27,16 +27,11 @@
       <artifactId>guava</artifactId>
     </dependency>
     <!--
-     | CGLIB is embedded by default by the JarJar build profile
+     | ASM is embedded by default by the JarJar build profile
     -->
     <dependency>
       <groupId>org.ow2.asm</groupId>
       <artifactId>asm</artifactId>
-      <optional>true</optional>
-    </dependency>
-    <dependency>
-      <groupId>cglib</groupId>
-      <artifactId>cglib</artifactId>
       <optional>true</optional>
     </dependency>
     <!--
@@ -70,6 +65,11 @@
       <version>3.0.5</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>com.google.truth</groupId>
+      <artifactId>truth</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -101,6 +101,24 @@
             <exclude>**/TypeConversionTest*</exclude>
           </excludes>
         </configuration>
+        <executions>
+          <execution>
+            <id>anonymous-class-loading</id>
+            <phase>test</phase>
+            <goals><goal>test</goal></goals>
+            <configuration>
+              <argLine>-Dguice_custom_class_loading=ANONYMOUS</argLine>
+            </configuration>
+          </execution>
+          <execution>
+            <id>child-class-loading</id>
+            <phase>test</phase>
+            <goals><goal>test</goal></goals>
+            <configuration>
+              <argLine>-Dguice_custom_class_loading=CHILD</argLine>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
       <!--
        | Add OSGi manifest
@@ -111,7 +129,7 @@
         <configuration>
           <instructions>
             <Bundle-Name>${project.artifactId}$(if;$(classes;NAMED;*.MethodAspect);; (no_aop))</Bundle-Name>
-            <Import-Package>!net.sf.cglib.*,!org.objectweb.asm.*,!com.google.inject.*,*</Import-Package>
+            <Import-Package>!org.objectweb.asm.*,!com.google.inject.*,*</Import-Package>
             <Eclipse-ExtensibleAPI>true</Eclipse-ExtensibleAPI>
           </instructions>
         </configuration>
@@ -126,6 +144,11 @@
             <exclude>LICENSE</exclude>
             <exclude>NOTICE</exclude>
           </excludes>
+          <archive>
+            <manifestEntries>
+              <Automatic-Module-Name>com.google.guice</Automatic-Module-Name>
+            </manifestEntries>
+          </archive>
         </configuration>
       </plugin>
       <!--
@@ -170,6 +193,7 @@
                 <configuration>
                   <symbols>NO_AOP</symbols>
                   <excludes>
+                    **/aop/*.java,
                     **/InterceptorBinding.java,
                     **/InterceptorBindingProcessor.java,
                     **/InterceptorStackCallback.java,
@@ -212,7 +236,7 @@
     </profile>
     <profile>
       <!--
-       | JarJar build profile: Embed CGLIB (and ASM) classes under a Guice namespace
+       | JarJar build profile: Embed ASM classes under a Guice namespace
       -->
       <id>guice.with.jarjar</id>
       <activation>
@@ -237,17 +261,8 @@
               <overwrite>true</overwrite>
               <includes>
                 <include>*:asm*</include>
-                <include>*:cglib</include>
               </includes>
               <rules>
-                <rule>
-                  <pattern>net.sf.cglib.*</pattern>
-                  <result>com.google.inject.internal.cglib.$@1</result>
-                </rule>
-                <rule>
-                  <pattern>net.sf.cglib.**.*</pattern>
-                  <result>com.google.inject.internal.cglib.@1.$@2</result>
-                </rule>
                 <rule>
                   <pattern>org.objectweb.asm.*</pattern>
                   <result>com.google.inject.internal.asm.$@1</result>
